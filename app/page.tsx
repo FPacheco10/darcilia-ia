@@ -1,14 +1,22 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { horarioSecretaria } from "./informacoes-colegio";
 
 type Mensagem = {
-  autor: "Você" | "Darcilia AI";
+  autor: "Você" | "Darcilia AI" | "Atendente";
   texto: string;
 };
 
+type Solicitacao = {
+  protocolo: string;
+  assunto: string;
+  status: "Aguardando atendente";
+  mensagens: Mensagem[];
+};
+
 const chaveFila = "darcilia-ai:fila-secretaria";
+const chaveAlteracoes = "darcilia-ai:alteracoes-painel";
 
 function responder(pergunta: string) {
   const texto = pergunta
@@ -27,12 +35,44 @@ export default function Home() {
   const [pergunta, setPergunta] = useState("");
   const [protocolo, setProtocolo] = useState<string | null>(null);
   const [erro, setErro] = useState("");
+  const [respostas, setRespostas] = useState<Mensagem[]>([]);
   const [mensagens, setMensagens] = useState<Mensagem[]>([
     {
       autor: "Darcilia AI",
       texto: "Olá! Você pode perguntar pelo horário da secretaria ou solicitar atendimento.",
     },
   ]);
+
+  useEffect(() => {
+    if (!protocolo) return;
+
+    const protocoloAtual = protocolo;
+
+    function carregarRespostas() {
+      try {
+        const alteracoes: Record<string, { mensagens: Mensagem[] }> =
+          JSON.parse(localStorage.getItem(chaveAlteracoes) ?? "{}");
+
+        const historico = alteracoes[protocoloAtual]?.mensagens ?? [];
+
+        setRespostas(
+          historico.filter((mensagem) => mensagem.autor === "Atendente"),
+        );
+        setErro("");
+      } catch {
+        setErro("Não foi possível carregar as respostas do atendente.");
+      }
+    }
+
+    function aoSalvarNoPainel(evento: StorageEvent) {
+      if (evento.key === chaveAlteracoes) carregarRespostas();
+    }
+
+    window.addEventListener("storage", aoSalvarNoPainel);
+    carregarRespostas();
+
+    return () => window.removeEventListener("storage", aoSalvarNoPainel);
+  }, [protocolo]);
 
   function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -53,35 +93,35 @@ export default function Home() {
 
     setErro("");
 
-    const novoProtocolo = `SEC-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-    const aviso: Mensagem = {
-      autor: "Darcilia AI",
-      texto: `Solicitação registrada na fila da Secretaria. Protocolo: ${novoProtocolo}.`,
-    };
-    const historico = [...mensagens, aviso];
-
     try {
-      const fila = JSON.parse(localStorage.getItem(chaveFila) ?? "[]");
+      const novoProtocolo = `SEC-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
-      localStorage.setItem(
-        chaveFila,
-        JSON.stringify([
-          ...fila,
-          {
-            protocolo: novoProtocolo,
-            assunto: "Atendimento solicitado pelo chat",
-            status: "Aguardando atendente",
-            mensagens: historico,
-          },
-        ]),
+      const aviso: Mensagem = {
+        autor: "Darcilia AI",
+        texto: `Solicitação registrada na fila da Secretaria. Protocolo: ${novoProtocolo}.`,
+      };
+
+      const historico = [...mensagens, aviso];
+      const fila: Solicitacao[] = JSON.parse(
+        localStorage.getItem(chaveFila) ?? "[]",
       );
 
+      const solicitacao: Solicitacao = {
+        protocolo: novoProtocolo,
+        assunto: "Atendimento solicitado pelo chat",
+        status: "Aguardando atendente",
+        mensagens: historico,
+      };
+
+      localStorage.setItem(chaveFila, JSON.stringify([...fila, solicitacao]));
       setMensagens(historico);
       setProtocolo(novoProtocolo);
     } catch {
       setErro("Não consegui registrar o atendimento neste navegador. Tente novamente.");
     }
   }
+
+  const conversa = [...mensagens, ...respostas];
 
   return (
     <main className="pagina">
@@ -92,7 +132,7 @@ export default function Home() {
         </header>
 
         <div className="conversa" role="log" aria-label="Conversa">
-          {mensagens.map((mensagem, indice) => (
+          {conversa.map((mensagem, indice) => (
             <div
               key={indice}
               className={mensagem.autor === "Você" ? "mensagem usuario" : "mensagem"}
@@ -125,8 +165,12 @@ export default function Home() {
                 Falar com atendente
               </button>
             </div>
+          </div>
+        )}
 
-            {erro && <p role="alert">{erro}</p>}
+        {erro && (
+          <div className="formulario">
+            <p role="alert">{erro}</p>
           </div>
         )}
       </section>
