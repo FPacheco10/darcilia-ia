@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { horarioSecretaria } from "../informacoes-colegio";
 
+const chaveFila = "darcilia-ai:fila-secretaria";
 const setores = ["Secretaria", "Financeiro"] as const;
-type Setor = (typeof setores)[number];
 
+type Setor = (typeof setores)[number];
 type Status =
   | "Com o assistente"
   | "Aguardando atendente"
@@ -56,21 +57,52 @@ export default function Painel() {
   const [setor, setSetor] = useState<Setor>("Secretaria");
   const [filas, setFilas] = useState(filasIniciais);
   const [protocoloSelecionado, setProtocoloSelecionado] = useState<string | null>(null);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    function carregarSolicitacoes() {
+      try {
+        const novas: Atendimento[] = JSON.parse(
+          localStorage.getItem(chaveFila) ?? "[]",
+        );
+
+        setFilas((atuais) => ({
+          ...atuais,
+          Secretaria: [
+            ...novas.filter(
+              (nova) => !atuais.Secretaria.some((item) => item.protocolo === nova.protocolo),
+            ).reverse(),
+            ...atuais.Secretaria,
+          ],
+        }));
+        setErro("");
+      } catch {
+        setErro("Não foi possível carregar as solicitações do navegador.");
+      }
+    }
+
+    function aoAlterarArmazenamento(evento: StorageEvent) {
+      if (evento.key === chaveFila) carregarSolicitacoes();
+    }
+
+    window.addEventListener("storage", aoAlterarArmazenamento);
+    carregarSolicitacoes();
+
+    return () => window.removeEventListener("storage", aoAlterarArmazenamento);
+  }, []);
 
   const atendimento = filas[setor].find(
     (item) => item.protocolo === protocoloSelecionado,
   );
 
-  function trocarSetor(novoSetor: Setor) {
-    setSetor(novoSetor);
-    setProtocoloSelecionado(null);
-  }
-
-  function atualizarStatus(protocolo: string, status: Status) {
+  function atualizarAtendimento(
+    protocolo: string,
+    alterar: (item: Atendimento) => Atendimento,
+  ) {
     setFilas((atuais) => ({
       ...atuais,
       [setor]: atuais[setor].map((item) =>
-        item.protocolo === protocolo ? { ...item, status } : item,
+        item.protocolo === protocolo ? alterar(item) : item,
       ),
     }));
   }
@@ -83,18 +115,9 @@ export default function Painel() {
 
     if (!texto || atendimento?.status !== "Em atendimento humano") return;
 
-    const protocolo = atendimento.protocolo;
-
-    setFilas((atuais) => ({
-      ...atuais,
-      [setor]: atuais[setor].map((item) =>
-        item.protocolo === protocolo && item.status === "Em atendimento humano"
-          ? {
-              ...item,
-              mensagens: [...item.mensagens, { autor: "Atendente", texto }],
-            }
-          : item,
-      ),
+    atualizarAtendimento(atendimento.protocolo, (item) => ({
+      ...item,
+      mensagens: [...item.mensagens, { autor: "Atendente", texto }],
     }));
 
     formulario.reset();
@@ -115,7 +138,10 @@ export default function Painel() {
                 key={opcao}
                 type="button"
                 aria-pressed={opcao === setor}
-                onClick={() => trocarSetor(opcao)}
+                onClick={() => {
+                  setSetor(opcao);
+                  setProtocoloSelecionado(null);
+                }}
                 style={{
                   background: opcao === setor ? "#0f766e" : "#edf2f8",
                   color: opcao === setor ? "#fff" : "#17243a",
@@ -127,6 +153,7 @@ export default function Painel() {
           </div>
 
           <h2>Fila de atendimento</h2>
+          {erro && <p role="alert">{erro}</p>}
 
           <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12 }}>
             {filas[setor].map((item) => (
@@ -155,7 +182,6 @@ export default function Painel() {
         {atendimento && (
           <section className="formulario" aria-labelledby="titulo-conversa">
             <h2 id="titulo-conversa">Conversa {atendimento.protocolo}</h2>
-
             <p role="status">
               <strong>{atendimento.status}</strong>
               {atendimento.status === "Em atendimento humano" &&
@@ -183,33 +209,29 @@ export default function Painel() {
               >
                 <label htmlFor="resposta">Resposta do atendente</label>
                 <div className="campo">
-                  <input
-                    id="resposta"
-                    name="resposta"
-                    placeholder="Digite sua resposta"
-                    required
-                  />
+                  <input id="resposta" name="resposta" placeholder="Digite sua resposta" required />
                   <button type="submit">Enviar resposta</button>
                 </div>
               </form>
             )}
 
             <div className="campo">
-              {atendimento.status === "Em atendimento humano" ? (
-                <button
-                  type="button"
-                  onClick={() => atualizarStatus(atendimento.protocolo, "Com o assistente")}
-                >
-                  Devolver ao assistente
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => atualizarStatus(atendimento.protocolo, "Em atendimento humano")}
-                >
-                  Assumir atendimento
-                </button>
-              )}
+              <button
+                type="button"
+                                onClick={() =>
+                  atualizarAtendimento(atendimento.protocolo, (item) => ({
+                    ...item,
+                    status:
+                      item.status === "Em atendimento humano"
+                        ? "Com o assistente"
+                        : "Em atendimento humano",
+                  }))
+                }
+              >
+                {atendimento.status === "Em atendimento humano"
+                  ? "Devolver ao assistente"
+                  : "Assumir atendimento"}
+              </button>
             </div>
           </section>
         )}

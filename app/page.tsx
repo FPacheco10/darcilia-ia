@@ -8,6 +8,8 @@ type Mensagem = {
   texto: string;
 };
 
+const chaveFila = "darcilia-ai:fila-secretaria";
+
 function responder(pergunta: string) {
   const texto = pergunta
     .toLowerCase()
@@ -15,18 +17,20 @@ function responder(pergunta: string) {
     .replace(/[\u0300-\u036f]/g, "");
 
   if (/\b(horario|horarios|abre|fecha)\b/.test(texto)) {
-    return  horarioSecretaria;
+    return horarioSecretaria;
   }
 
-  return "Ainda não tenho essa informação. Consulte a secretaria do colégio.";
+  return "Ainda não tenho essa informação. Você pode pedir atendimento à secretaria.";
 }
 
 export default function Home() {
   const [pergunta, setPergunta] = useState("");
+  const [protocolo, setProtocolo] = useState<string | null>(null);
+  const [erro, setErro] = useState("");
   const [mensagens, setMensagens] = useState<Mensagem[]>([
     {
       autor: "Darcilia AI",
-      texto: "Olá! Para testar, pergunte qual é o horário da secretaria.",
+      texto: "Olá! Você pode perguntar pelo horário da secretaria ou solicitar atendimento.",
     },
   ]);
 
@@ -34,7 +38,7 @@ export default function Home() {
     evento.preventDefault();
 
     const texto = pergunta.trim();
-    if (!texto) return;
+    if (!texto || protocolo) return;
 
     setMensagens((atuais) => [
       ...atuais,
@@ -44,12 +48,47 @@ export default function Home() {
     setPergunta("");
   }
 
+  function solicitarAtendimento() {
+    if (protocolo) return;
+
+    setErro("");
+
+    const novoProtocolo = `SEC-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    const aviso: Mensagem = {
+      autor: "Darcilia AI",
+      texto: `Solicitação registrada na fila da Secretaria. Protocolo: ${novoProtocolo}.`,
+    };
+    const historico = [...mensagens, aviso];
+
+    try {
+      const fila = JSON.parse(localStorage.getItem(chaveFila) ?? "[]");
+
+      localStorage.setItem(
+        chaveFila,
+        JSON.stringify([
+          ...fila,
+          {
+            protocolo: novoProtocolo,
+            assunto: "Atendimento solicitado pelo chat",
+            status: "Aguardando atendente",
+            mensagens: historico,
+          },
+        ]),
+      );
+
+      setMensagens(historico);
+      setProtocolo(novoProtocolo);
+    } catch {
+      setErro("Não consegui registrar o atendimento neste navegador. Tente novamente.");
+    }
+  }
+
   return (
     <main className="pagina">
       <section className="chat" aria-labelledby="titulo">
         <header className="cabecalho">
           <h1 id="titulo">Darcilia AI</h1>
-          <p>Colégio Darcilia Coimbra</p>
+          <p>Colégio Darcilia Coimbra · Demonstração</p>
         </header>
 
         <div className="conversa" role="log" aria-label="Conversa">
@@ -64,20 +103,32 @@ export default function Home() {
           ))}
         </div>
 
-        <form className="formulario" onSubmit={enviar}>
-          <label htmlFor="pergunta">Sua pergunta</label>
-          <div className="campo">
-            <input
-              id="pergunta"
-              value={pergunta}
-              onChange={(evento) => setPergunta(evento.target.value)}
-              placeholder="Digite sua pergunta"
-            />
-            <button type="submit" disabled={!pergunta.trim()}>
-              Enviar
-            </button>
+        {!protocolo && (
+          <div className="formulario">
+            <form onSubmit={enviar}>
+              <label htmlFor="pergunta">Sua pergunta</label>
+              <div className="campo">
+                <input
+                  id="pergunta"
+                  value={pergunta}
+                  onChange={(evento) => setPergunta(evento.target.value)}
+                  placeholder="Digite sua pergunta"
+                />
+                <button type="submit" disabled={!pergunta.trim()}>
+                  Enviar
+                </button>
+              </div>
+            </form>
+
+            <div className="campo" style={{ marginTop: 12 }}>
+              <button type="button" onClick={solicitarAtendimento}>
+                Falar com atendente
+              </button>
+            </div>
+
+            {erro && <p role="alert">{erro}</p>}
           </div>
-        </form>
+        )}
       </section>
     </main>
   );
