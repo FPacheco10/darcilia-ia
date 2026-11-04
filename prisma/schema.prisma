@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Setor {
+  SECRETARIA
+  FINANCEIRO
+}
+
+enum StatusAtendimento {
+  COM_ASSISTENTE
+  AGUARDANDO_ATENDENTE
+  EM_ATENDIMENTO_HUMANO
+}
+
+enum AutorMensagem {
+  USUARIO
+  ASSISTENTE
+  ATENDENTE
+}
+
+model Atendimento {
+  id        String            @id @default(uuid())
+  protocolo String            @unique
+  setor     Setor
+  assunto   String
+  status    StatusAtendimento @default(AGUARDANDO_ATENDENTE)
+  criadoEm  DateTime          @default(now())
+  mensagens Mensagem[]
+}
+
+model Mensagem {
+  id            Int          @id @default(autoincrement())
+  atendimentoId String
+  autor         AutorMensagem
+  texto         String
+  criadaEm      DateTime     @default(now())
+  atendimento   Atendimento  @relation(fields: [atendimentoId], references: [id])
+
+  @@index([atendimentoId, id])
+}
