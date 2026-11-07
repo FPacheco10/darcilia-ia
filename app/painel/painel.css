@@ -1,0 +1,101 @@
+.painel-shell {
+  display: grid;
+  grid-template-columns: 235px minmax(0, 1fr);
+  min-height: 100vh;
+  background: #f4f7fa;
+}
+
+.painel-lateral {
+  padding: 28px 20px;
+  background: linear-gradient(155deg, #062d3e, #075968);
+  color: white;
+}
+
+.painel-marca {
+  margin-bottom: 30px;
+}
+
+.painel-marca strong,
+.painel-marca small {
+  display: block;
+}
+
+.painel-marca small {
+  margin-top: 5px;
+  color: #c6e5e9;
+}
+
+.painel-lateral nav {
+  display: grid;
+  gap: 6px;
+}
+
+.painel-lateral a {
+  padding: 12px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.painel-lateral a[aria-current] {
+  background: #087b87;
+}
+
+.painel-conteudo {
+  min-width: 0;
+  padding: 32px;
+}
+
+.painel-intro h1 {
+  margin: 0 0 6px;
+}
+
+.painel-intro p {
+  margin: 0;
+  color: #496074;
+}
+
+.painel-indicadores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 14px;
+  margin: 24px 0;
+}
+
+.painel-indicador {
+  padding: 18px;
+  border: 1px solid #dce7ec;
+  border-radius: 14px;
+  background: white;
+}
+
+.painel-indicador strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #075968;
+  font-size: 1.75rem;
+}
+
+.painel-conteudo > .chat {
+  max-width: none;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .painel-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .painel-conteudo {
+    padding: 20px 14px;
+  }
+
+  .painel-marca {
+    margin-bottom: 12px;
+  }
+
+  .painel-lateral nav {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { obterPrisma } from "../../../lib/prisma";
+import { verificarAcessoEquipe } from "../../../lib/acesso-equipe";
 
 function mensagemValida(
   valor: unknown,
@@ -17,6 +18,9 @@ function mensagemValida(
 }
 
 export async function POST(request: Request) {
+  const bloqueio = await verificarAcessoEquipe(request.headers);
+  if (bloqueio) return bloqueio;
+
   const corpo = await request.json().catch(() => null);
   const assunto = typeof corpo?.assunto === "string" ? corpo.assunto.trim() : "";
   const mensagens: unknown = corpo?.mensagens;
@@ -64,9 +68,12 @@ export async function POST(request: Request) {
     );
   }
 }
+export async function GET(request: Request) {
+  const bloqueio = await verificarAcessoEquipe(request.headers);
+  if (bloqueio) return bloqueio;
 
-export async function GET() {
   try {
+
     const atendimentos = await obterPrisma().atendimento.findMany({
       where: { setor: "SECRETARIA" },
       orderBy: [{ criadoEm: "desc" }, { id: "desc" }],
@@ -99,6 +106,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const bloqueio = await verificarAcessoEquipe(request.headers);
+  if (bloqueio) return bloqueio;
+
   const corpo = await request.json().catch(() => null);
   const protocolo =
     typeof corpo?.protocolo === "string" ? corpo.protocolo.trim() : "";

@@ -1,3 +1,4 @@
+import { verificarAcessoEquipe } from "../../../../lib/acesso-equipe";
 import { obterPrisma } from "../../../../lib/prisma";
 
 const formatoProtocolo = /^SEC-[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/;
@@ -14,10 +15,7 @@ export async function GET(request: Request) {
 
   try {
     const atendimento = await obterPrisma().atendimento.findUnique({
-      where: {
-        protocolo,
-        setor: "SECRETARIA",
-      },
+      where: { protocolo, setor: "SECRETARIA" },
       select: {
         mensagens: {
           where: { autor: "ATENDENTE" },
@@ -46,6 +44,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const bloqueio = await verificarAcessoEquipe(request.headers);
+  if (bloqueio) return bloqueio;
+
   const corpo = await request.json().catch(() => null);
   const protocolo =
     typeof corpo?.protocolo === "string" ? corpo.protocolo.trim() : "";
