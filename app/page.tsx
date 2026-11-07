@@ -8,16 +8,6 @@ type Mensagem = {
   texto: string;
 };
 
-type Solicitacao = {
-  protocolo: string;
-  assunto: string;
-  status: "Aguardando atendente";
-  mensagens: Mensagem[];
-};
-
-const chaveFila = "darcilia-ai:fila-secretaria";
-const chaveAlteracoes = "darcilia-ai:alteracoes-painel";
-
 function responder(pergunta: string) {
   const texto = pergunta
     .toLowerCase()
@@ -35,6 +25,7 @@ export default function Home() {
   const [pergunta, setPergunta] = useState("");
   const [protocolo, setProtocolo] = useState<string | null>(null);
   const [erro, setErro] = useState("");
+  const [solicitando, setSolicitando] = useState(false);
   const [respostas, setRespostas] = useState<Mensagem[]>([]);
   const [mensagens, setMensagens] = useState<Mensagem[]>([
     {
@@ -46,39 +37,53 @@ export default function Home() {
   useEffect(() => {
     if (!protocolo) return;
 
-    const protocoloAtual = protocolo;
+    const controlador = new AbortController();
+    const parametros = new URLSearchParams({ protocolo });
+    const url = `/api/atendimentos/respostas?${parametros}`;
+    let proximaConsulta: number | undefined;
 
-    function carregarRespostas() {
+    async function carregarRespostas() {
       try {
-        const alteracoes: Record<string, { mensagens: Mensagem[] }> =
-          JSON.parse(localStorage.getItem(chaveAlteracoes) ?? "{}");
+        const resposta = await fetch(url, {
+          cache: "no-store",
+          signal: controlador.signal,
+        });
 
-        const historico = alteracoes[protocoloAtual]?.mensagens ?? [];
+        if (!resposta.ok) {
+          throw new Error("Falha ao consultar respostas.");
+        }
+
+        const historico: { texto: string }[] = await resposta.json();
+        if (controlador.signal.aborted) return;
 
         setRespostas(
-          historico.filter((mensagem) => mensagem.autor === "Atendente"),
+          historico.map(({ texto }) => ({ autor: "Atendente", texto })),
         );
         setErro("");
       } catch {
-        setErro("Não foi possível carregar as respostas do atendente.");
+        if (!controlador.signal.aborted) {
+          setErro("Não foi possível carregar as respostas. Tentando novamente.");
+        }
+      } finally {
+        if (!controlador.signal.aborted) {
+          proximaConsulta = window.setTimeout(carregarRespostas, 3000);
+        }
       }
     }
 
-    function aoSalvarNoPainel(evento: StorageEvent) {
-      if (evento.key === chaveAlteracoes) carregarRespostas();
-    }
+    void carregarRespostas();
 
-    window.addEventListener("storage", aoSalvarNoPainel);
-    carregarRespostas();
-
-    return () => window.removeEventListener("storage", aoSalvarNoPainel);
+    return () => {
+      controlador.abort();
+      window.clearTimeout(proximaConsulta);
+    };
   }, [protocolo]);
 
   function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
 
     const texto = pergunta.trim();
-    if (!texto || protocolo) return;
+    if (!texto || protocolo || solicitando) return;
 
     setMensagens((atuais) => [
       ...atuais,
@@ -88,36 +93,46 @@ export default function Home() {
     setPergunta("");
   }
 
-  function solicitarAtendimento() {
-    if (protocolo) return;
+  async function solicitarAtendimento() {
+    if (protocolo || solicitando) return;
 
+    setSolicitando(true);
     setErro("");
 
     try {
-      const novoProtocolo = `SEC-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+      const resposta = await fetch("/api/atendimentos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assunto: "Atendimento solicitado pelo chat",
+          mensagens: mensagens.slice(-50).map(({ autor, texto }) => ({
+            autor: autor === "Você" ? "USUARIO" : "ASSISTENTE",
+            texto,
+          })),
+        }),
+      });
 
-      const aviso: Mensagem = {
-        autor: "Darcilia AI",
-        texto: `Solicitação registrada na fila da Secretaria. Protocolo: ${novoProtocolo}.`,
-      };
+      const dados: { protocolo?: string; erro?: string } = await resposta.json();
 
-      const historico = [...mensagens, aviso];
-      const fila: Solicitacao[] = JSON.parse(
-        localStorage.getItem(chaveFila) ?? "[]",
-      );
+      if (!resposta.ok || !dados.protocolo) {
+        setErro(dados.erro ?? "Não foi possível registrar o atendimento.");
+        return;
+      }
 
-      const solicitacao: Solicitacao = {
-        protocolo: novoProtocolo,
-        assunto: "Atendimento solicitado pelo chat",
-        status: "Aguardando atendente",
-        mensagens: historico,
-      };
+      const novoProtocolo = dados.protocolo;
 
-      localStorage.setItem(chaveFila, JSON.stringify([...fila, solicitacao]));
-      setMensagens(historico);
+      setMensagens((atuais) => [
+        ...atuais,
+        {
+          autor: "Darcilia AI",
+          texto: `Solicitação registrada na fila da Secretaria. Protocolo: ${novoProtocolo}.`,
+        },
+      ]);
       setProtocolo(novoProtocolo);
     } catch {
-      setErro("Não consegui registrar o atendimento neste navegador. Tente novamente.");
+      setErro("Não foi possível registrar o atendimento. Tente novamente.");
+    } finally {
+      setSolicitando(false);
     }
   }
 
@@ -135,7 +150,9 @@ export default function Home() {
           {conversa.map((mensagem, indice) => (
             <div
               key={indice}
-              className={mensagem.autor === "Você" ? "mensagem usuario" : "mensagem"}
+              className={
+                mensagem.autor === "Você" ? "mensagem usuario" : "mensagem"
+              }
             >
               <strong>{mensagem.autor}</strong>
               <p>{mensagem.texto}</p>
@@ -153,16 +170,25 @@ export default function Home() {
                   value={pergunta}
                   onChange={(evento) => setPergunta(evento.target.value)}
                   placeholder="Digite sua pergunta"
+                  maxLength={4000}
+                  disabled={solicitando}
                 />
-                <button type="submit" disabled={!pergunta.trim()}>
+                <button
+                  type="submit"
+                  disabled={solicitando || !pergunta.trim()}
+                >
                   Enviar
                 </button>
               </div>
             </form>
 
             <div className="campo" style={{ marginTop: 12 }}>
-              <button type="button" onClick={solicitarAtendimento}>
-                Falar com atendente
+              <button
+                type="button"
+                onClick={solicitarAtendimento}
+                disabled={solicitando}
+              >
+                {solicitando ? "Registrando..." : "Falar com atendente"}
               </button>
             </div>
           </div>

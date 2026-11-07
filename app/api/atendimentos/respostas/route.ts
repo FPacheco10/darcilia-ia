@@ -1,16 +1,57 @@
 import { obterPrisma } from "../../../../lib/prisma";
 
+const formatoProtocolo = /^SEC-[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/;
+
+export async function GET(request: Request) {
+  const protocolo = new URL(request.url).searchParams.get("protocolo") ?? "";
+
+  if (!formatoProtocolo.test(protocolo)) {
+    return Response.json(
+      { erro: "Informe um protocolo válido." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const atendimento = await obterPrisma().atendimento.findUnique({
+      where: {
+        protocolo,
+        setor: "SECRETARIA",
+      },
+      select: {
+        mensagens: {
+          where: { autor: "ATENDENTE" },
+          orderBy: { id: "asc" },
+          select: { texto: true },
+        },
+      },
+    });
+
+    if (!atendimento) {
+      return Response.json(
+        { erro: "Atendimento não encontrado." },
+        { status: 404 },
+      );
+    }
+
+    return Response.json(atendimento.mensagens, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch {
+    return Response.json(
+      { erro: "Não foi possível consultar as respostas do atendente." },
+      { status: 500 },
+    );
+  }
+}
+
 export async function POST(request: Request) {
   const corpo = await request.json().catch(() => null);
   const protocolo =
     typeof corpo?.protocolo === "string" ? corpo.protocolo.trim() : "";
   const texto = typeof corpo?.texto === "string" ? corpo.texto.trim() : "";
 
-  if (
-    !/^SEC-[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/.test(protocolo) ||
-    !texto ||
-    texto.length > 4000
-  ) {
+  if (!formatoProtocolo.test(protocolo) || !texto || texto.length > 4000) {
     return Response.json(
       { erro: "Informe um protocolo válido e uma resposta de até 4.000 caracteres." },
       { status: 400 },
